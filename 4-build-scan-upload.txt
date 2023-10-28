@@ -1,0 +1,48 @@
+name: Build and Deploy to Docker Hub
+env:
+  DOCKER_USER: ${{secrets.DOCKER_HUB_USER}}
+  DOCKER_PASSWORD: ${{secrets.DOCKER_HUB_TOKEN}}
+  DOCKER_REPOSITORY: web-app-lab
+  NODE_IMAGE_TAG: nodejs-app
+
+on:
+  push:
+    branches: [ master ]
+
+permissions:
+  actions: read
+  security-events: write
+  
+jobs:
+  
+  build-scan-upload-codeql:
+    
+    name: Build and Scan Docker Images
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Build and tag Image
+      run: |
+        docker build -t ${{env.DOCKER_USER}}/${{env.DOCKER_REPOSITORY}}:${{env.NODE_IMAGE_TAG}} .
+        
+    - name: Run Trivy vulnerability scanner
+      id: scan
+      uses: crazy-max/ghaction-container-scan@v3
+      with: 
+        image: ${{env.DOCKER_USER}}/${{env.DOCKER_REPOSITORY}}:${{env.NODE_IMAGE_TAG}}
+        annotations: true
+        dockerfile: ./Dockerfile
+        severity: CRITICAL
+
+    - name: Upload SARIF file
+      if: ${{ steps.scan.outputs.sarif != '' }}
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+
+    - name: Push Image to Docker Hub    
+      run: |
+        docker login -u ${{env.DOCKER_USER}} -p ${{env.DOCKER_PASSWORD}}
+        docker push ${{env.DOCKER_USER}}/${{env.DOCKER_REPOSITORY}}:${{env.NODE_IMAGE_TAG}}
+      
